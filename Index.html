@@ -1,0 +1,960 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>EcoWatch – Pantau Lingkungan Kita</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet"/>
+
+  <style>
+    /* ── TOKENS ───────────────────────────────────────────── */
+    :root {
+      --forest:   #1A3C2E;
+      --moss:     #2E6B4F;
+      --leaf:     #4CAF7D;
+      --sky:      #E8F5EE;
+      --sand:     #F4F0E8;
+      --ink:      #111C17;
+      --muted:    #6B7C74;
+      --white:    #FFFFFF;
+      --danger:   #C0392B;
+      --warn:     #E67E22;
+      --radius:   10px;
+      --shadow:   0 2px 16px rgba(26,60,46,.12);
+      --card-bg:  #FFFFFF;
+      --border:   #D9E6DF;
+      --input-bg: #E8F5EE;
+    }
+    body.dark {
+      --forest:   #A8D5B5;
+      --moss:     #5BBF8A;
+      --leaf:     #4CAF7D;
+      --sky:      #1A2E22;
+      --sand:     #111A15;
+      --ink:      #E8F0EB;
+      --muted:    #7FA893;
+      --white:    #1E2E24;
+      --danger:   #E57373;
+      --shadow:   0 2px 16px rgba(0,0,0,.4);
+      --card-bg:  #1E2E24;
+      --border:   #2A4035;
+      --input-bg: #1A2E22;
+    }
+    body.dark header        { background: #0D1F15; }
+    body.dark .sidebar      { background: var(--card-bg); border-color: var(--border); }
+    body.dark .report-card  { background: var(--card-bg); border-color: var(--border); }
+    body.dark .search-dropdown { background: #1E2E24; border-color: var(--border); }
+    body.dark .search-result-item { background: #1E2E24; border-color: var(--border); }
+    body.dark .search-result-item:hover { background: #243B2D; }
+    body.dark input[type=text],
+    body.dark textarea,
+    body.dark select        { background: var(--input-bg); color: var(--ink); border-color: var(--border); }
+    body.dark .map-hint     { background: #1A2E22; border-color: var(--leaf); }
+    body.dark #koordinat-display { background: #111A15; color: var(--muted); }
+    body.dark .chip.all     { background: var(--moss); }
+    body.dark .leaflet-popup-content-wrapper { background: #1E2E24 !important; color: var(--ink) !important; }
+    body.dark .popup-title  { color: var(--leaf); }
+    body.dark .popup-desc   { color: var(--muted); }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--sand);
+      color: var(--ink);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── TOPBAR ───────────────────────────────────────────── */
+    header {
+      background: var(--forest);
+      color: var(--white);
+      padding: 0 24px;
+      height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    }
+    .logo {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -.3px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .logo-dot { color: var(--leaf); }
+    .header-sub {
+      font-size: .75rem;
+      color: rgba(255,255,255,.55);
+      display: none;
+    }
+    @media(min-width:540px){ .header-sub { display: block; } }
+
+    /* ── LAYOUT ───────────────────────────────────────────── */
+    .main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr;
+      grid-template-rows: auto 1fr;
+    }
+    @media(min-width:900px){
+      .main {
+        grid-template-columns: 340px 1fr;
+        grid-template-rows: 1fr;
+        height: calc(100vh - 58px);
+      }
+    }
+
+    /* ── SIDEBAR ──────────────────────────────────────────── */
+    .sidebar {
+      background: var(--white);
+      border-right: 1px solid #D9E6DF;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── TABS ─────────────────────────────────────────────── */
+    .tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-bottom: 1px solid #D9E6DF;
+    }
+    .tab {
+      padding: 13px 8px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: .82rem;
+      font-weight: 600;
+      text-align: center;
+      cursor: pointer;
+      color: var(--muted);
+      border: none;
+      background: none;
+      letter-spacing: .2px;
+      transition: color .2s, border-bottom .2s;
+      border-bottom: 3px solid transparent;
+    }
+    .tab.active { color: var(--moss); border-bottom-color: var(--leaf); }
+    .tab:hover:not(.active) { background: var(--sky); }
+
+    /* ── PANEL ────────────────────────────────────────────── */
+    .panel { display: none; flex: 1; overflow-y: auto; padding: 18px; flex-direction: column; gap: 14px; }
+    .panel.active { display: flex; }
+
+    /* ── FORM ─────────────────────────────────────────────── */
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    label { font-size: .78rem; font-weight: 600; color: var(--forest); letter-spacing: .3px; text-transform: uppercase; }
+    input[type=text], textarea, select {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1.5px solid #C8DDD3;
+      border-radius: var(--radius);
+      font-family: 'Inter', sans-serif;
+      font-size: .9rem;
+      background: var(--sky);
+      color: var(--ink);
+      transition: border-color .2s;
+      outline: none;
+    }
+    input:focus, textarea:focus, select:focus { border-color: var(--moss); background: var(--white); }
+    textarea { resize: vertical; min-height: 80px; }
+
+    .map-hint {
+      background: #E8F5EE;
+      border: 1.5px dashed var(--leaf);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      font-size: .82rem;
+      color: var(--moss);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .map-hint span { font-size: 1.1rem; }
+
+    /* ── SEARCH BOX ───────────────────────────────────────── */
+    .search-wrap { position: relative; }
+    .search-icon {
+      position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+      font-size: .9rem; pointer-events: none; opacity: .5;
+    }
+    .search-wrap input {
+      padding-left: 32px !important;
+      padding-right: 34px !important;
+    }
+    .search-clear {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; cursor: pointer;
+      font-size: .85rem; color: var(--muted); display: none;
+      line-height: 1; padding: 2px;
+    }
+    .search-clear.show { display: block; }
+    .search-dropdown {
+      display: none;
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0; right: 0;
+      background: var(--white);
+      border: 1.5px solid #C8DDD3;
+      border-radius: var(--radius);
+      box-shadow: 0 8px 24px rgba(26,60,46,.15);
+      overflow: hidden;
+      z-index: 2000;
+      max-height: 260px;
+      overflow-y: auto;
+    }
+    .search-dropdown.open { display: block; }
+    .search-result-item {
+      padding: 10px 13px; font-size: .82rem; color: var(--ink);
+      cursor: pointer; border-bottom: 1px solid #EDF5F0;
+      background: var(--white); line-height: 1.45; transition: background .12s;
+      display: flex; align-items: flex-start; gap: 9px;
+    }
+    .search-result-item:last-child { border-bottom: none; }
+    .search-result-item:hover, .search-result-item.highlighted { background: var(--sky); }
+    .search-result-icon { font-size: 1rem; margin-top: 1px; flex-shrink: 0; }
+    .search-result-text { display: flex; flex-direction: column; gap: 2px; }
+    .place-name { font-weight: 600; color: var(--forest); font-size: .83rem; }
+    .place-sub  { font-size: .73rem; color: var(--muted); }
+    .search-spinner {
+      padding: 12px 13px; font-size: .82rem; color: var(--muted);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .spinner-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--leaf); animation: pulse 1s infinite;
+      flex-shrink: 0;
+    }
+    @keyframes pulse {
+      0%,100% { opacity: .3; transform: scale(.8); }
+      50%      { opacity: 1;  transform: scale(1.2); }
+    }
+    .search-no-result {
+      padding: 12px 13px; font-size: .82rem; color: var(--muted);
+      text-align: center;
+    }
+
+    #koordinat-display {
+      font-size: .78rem;
+      color: var(--muted);
+      padding: 6px 10px;
+      background: var(--sand);
+      border-radius: 6px;
+    }
+
+    .btn {
+      padding: 11px 18px;
+      border-radius: var(--radius);
+      border: none;
+      cursor: pointer;
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 600;
+      font-size: .88rem;
+      letter-spacing: .3px;
+      transition: transform .1s, opacity .2s;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn-primary { background: var(--moss); color: var(--white); width: 100%; }
+    .btn-primary:hover { opacity: .88; }
+    .btn-sm { padding: 5px 10px; font-size: .76rem; border-radius: 6px; }
+    .btn-danger { background: #FDECEA; color: var(--danger); }
+
+    /* ── FILTER BAR ───────────────────────────────────────── */
+    .filter-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding-bottom: 4px;
+    }
+    .chip {
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: .76rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1.5px solid transparent;
+      transition: all .2s;
+      letter-spacing: .2px;
+    }
+    .chip.all    { background: var(--forest); color: var(--white); }
+    .chip.Sampah     { background: #FDF3E7; color: #9C5A00; border-color: #F0C07A; }
+    .chip.Pencemaran { background: #EAF0FD; color: #2B4FA0; border-color: #9BB6F0; }
+    .chip.Banjir     { background: #E9F7FE; color: #1A5F7A; border-color: #85CDE8; }
+    .chip.Saluran    { background: #F5EEE6; color: #6B4423; border-color: #C9A98B; }
+    .chip.Lainnya    { background: var(--sky); color: var(--moss); border-color: var(--leaf); }
+    .chip.inactive { opacity: .45; }
+
+    /* ── REPORT CARDS ─────────────────────────────────────── */
+    .report-list { display: flex; flex-direction: column; gap: 10px; }
+    .report-card {
+      background: var(--white);
+      border: 1px solid #D9E6DF;
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: box-shadow .2s, border-color .2s;
+    }
+    .report-card:hover { box-shadow: var(--shadow); border-color: var(--leaf); }
+    .report-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
+    .report-title { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: .9rem; color: var(--forest); }
+    .badge {
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: .7rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .badge.Sampah     { background: #FDF3E7; color: #9C5A00; }
+    .badge.Pencemaran { background: #EAF0FD; color: #2B4FA0; }
+    .badge.Banjir     { background: #E9F7FE; color: #1A5F7A; }
+    .badge.Saluran    { background: #F5EEE6; color: #6B4423; }
+    .badge.Lainnya    { background: var(--sky); color: var(--moss); }
+
+
+    /* ── STATUS ───────────────────────────────────────────── */
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 8px; border-radius: 12px;
+      font-size: .68rem; font-weight: 700; white-space: nowrap;
+    }
+    .status-Baru      { background: #EAF0FD; color: #2B4FA0; }
+    .status-Diproses  { background: #FDF3E7; color: #9C5A00; }
+    .status-Selesai   { background: #E8F5EE; color: #1A6B3C; }
+    .status-dot { width:6px; height:6px; border-radius:50%; }
+    .status-Baru .status-dot      { background: #2B4FA0; }
+    .status-Diproses .status-dot  { background: #E67E22; }
+    .status-Selesai .status-dot   { background: #27AE60; }
+
+    /* GPS btn */
+    .gps-btn {
+      display: flex; align-items: center; justify-content: center; gap: 7px;
+      width: 100%; padding: 9px;
+      background: var(--sky); border: 1.5px solid var(--leaf);
+      border-radius: var(--radius); cursor: pointer;
+      font-family: 'Space Grotesk', sans-serif; font-weight: 600;
+      font-size: .82rem; color: var(--moss);
+      transition: background .2s, opacity .2s;
+    }
+    .gps-btn:hover { background: #d4eddf; }
+    .gps-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* Dark mode toggle */
+    .dark-toggle {
+      background: none; border: none; cursor: pointer;
+      font-size: 1.1rem; padding: 4px 8px; border-radius: 8px;
+      color: rgba(255,255,255,.8); transition: background .2s;
+    }
+    .dark-toggle:hover { background: rgba(255,255,255,.15); }
+
+    .report-desc { font-size: .82rem; color: var(--muted); margin-bottom: 7px; line-height: 1.45; }
+    .report-meta { display: flex; align-items: center; justify-content: space-between; font-size: .72rem; color: var(--muted); }
+    .report-meta .loc { display: flex; align-items: center; gap: 4px; }
+
+    .empty-state {
+      text-align: center;
+      color: var(--muted);
+      padding: 32px 12px;
+      font-size: .88rem;
+    }
+    .empty-state .icon { font-size: 2.2rem; margin-bottom: 8px; }
+
+    /* ── MAP ──────────────────────────────────────────────── */
+    #map {
+      width: 100%;
+      height: 55vh;
+    }
+    @media(min-width:900px){ #map { height: 100%; } }
+
+    /* ── CATEGORY COLORS for pins ─────────────────────────── */
+    .pin-label {
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 11px;
+      padding: 3px 7px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    /* ── TOAST ────────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--forest);
+      color: var(--white);
+      padding: 11px 22px;
+      border-radius: 24px;
+      font-size: .88rem;
+      font-weight: 500;
+      box-shadow: 0 4px 20px rgba(0,0,0,.25);
+      z-index: 9999;
+      transition: transform .3s ease;
+      pointer-events: none;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* ── LEAFLET POPUP ────────────────────────────────────── */
+    .leaflet-popup-content-wrapper {
+      border-radius: var(--radius) !important;
+      box-shadow: var(--shadow) !important;
+      font-family: 'Inter', sans-serif !important;
+    }
+    .popup-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: .95rem;
+      color: var(--forest);
+      margin-bottom: 4px;
+    }
+    .popup-cat {
+      display: inline-block;
+      font-size: .72rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 10px;
+      margin-bottom: 6px;
+    }
+    .popup-desc { font-size: .83rem; color: var(--muted); line-height: 1.5; }
+    .popup-date { font-size: .72rem; color: #AAB8B3; margin-top: 6px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🌿 EcoWatch</div>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <div class="header-sub">Sistem Informasi Lingkungan Berbasis Peta</div>
+    <button class="dark-toggle" onclick="toggleDark()" id="dark-btn" title="Dark mode">🌙</button>
+  </div>
+</header>
+
+<div class="main">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('lapor')">＋ Laporan Baru</button>
+      <button class="tab" onclick="switchTab('list')" id="tab-list">📋 Semua Laporan</button>
+    </div>
+
+    <!-- PANEL: FORM -->
+    <div class="panel active" id="panel-lapor">
+      <div class="form-group">
+        <label>Cari Lokasi</label>
+        <div class="search-wrap" id="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-input"
+            placeholder="Ketik nama tempat, jalan, kota…"
+            oninput="onSearchInput(this.value)"
+            onkeydown="onSearchKeydown(event)"
+            autocomplete="off"/>
+          <button class="search-clear" id="search-clear" onclick="clearSearch()" title="Hapus">✕</button>
+          <div class="search-dropdown" id="search-dropdown"></div>
+        </div>
+      </div>
+
+      <div class="map-hint">
+        <span>📍</span>
+        <span>Klik lokasi di peta untuk menandai titik laporan</span>
+      </div>
+
+      <button class="gps-btn" id="gps-btn" onclick="getGPS()">
+        📍 Gunakan Lokasi Saya (GPS)
+      </button>
+
+      <div id="koordinat-display">Belum ada titik yang dipilih</div>
+
+      <div class="form-group">
+        <label>Judul Laporan</label>
+        <input type="text" id="f-judul" placeholder="Contoh: Tumpukan sampah liar di Jl. Mawar"/>
+      </div>
+
+      <div class="form-group">
+        <label>Kategori Masalah</label>
+        <select id="f-kategori">
+          <option value="">-- Pilih kategori --</option>
+          <option value="Sampah">🟠 Sampah Liar</option>
+          <option value="Pencemaran">🔵 Pencemaran Air</option>
+          <option value="Banjir">🩵 Banjir / Genangan</option>
+          <option value="Saluran">🟤 Saluran Air Tersumbat</option>
+          <option value="Lainnya">🟢 Lainnya</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Status Laporan</label>
+        <select id="f-status">
+          <option value="Baru">🔵 Baru</option>
+          <option value="Diproses">🟠 Sedang Diproses</option>
+          <option value="Selesai">🟢 Selesai</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Deskripsi</label>
+        <textarea id="f-deskripsi" placeholder="Jelaskan kondisi di lapangan secara singkat…"></textarea>
+      </div>
+
+      <button class="btn btn-primary" onclick="submitLaporan()">Kirim Laporan ke Peta</button>
+    </div>
+
+    <!-- PANEL: LIST -->
+    <div class="panel" id="panel-list">
+      <div class="filter-bar" id="filter-bar">
+        <div class="chip all" onclick="setFilter('all')">Semua</div>
+        <div class="chip Sampah" onclick="setFilter('Sampah')">Sampah Liar</div>
+        <div class="chip Pencemaran" onclick="setFilter('Pencemaran')">Pencemaran Air</div>
+        <div class="chip Banjir" onclick="setFilter('Banjir')">Banjir</div>
+        <div class="chip Saluran" onclick="setFilter('Saluran')">Saluran Tersumbat</div>
+        <div class="chip Lainnya" onclick="setFilter('Lainnya')">Lainnya</div>
+      </div>
+      <div class="report-list" id="report-list"></div>
+    </div>
+  </aside>
+
+  <!-- MAP -->
+  <div id="map"></div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ── DATA ─────────────────────────────────────────────────────
+let reports = JSON.parse(localStorage.getItem('ecowatch_reports') || '[]');
+let selectedLatLng = null;
+let markers = {};       // id → leaflet marker
+let activeFilter = 'all';
+let tempMarker = null;
+
+// ── CATEGORY CONFIG ──────────────────────────────────────────
+const catColor = {
+  Sampah:     { bg:'#F0C07A', fg:'#9C5A00', emoji:'🟠' },
+  Pencemaran: { bg:'#9BB6F0', fg:'#2B4FA0', emoji:'🔵' },
+  Banjir:     { bg:'#85CDE8', fg:'#1A5F7A', emoji:'🩵' },
+  Saluran:    { bg:'#C9A98B', fg:'#6B4423', emoji:'🟤' },
+  Lainnya:    { bg:'#4CAF7D', fg:'#FFFFFF', emoji:'🟢' },
+};
+
+function makePinIcon(cat) {
+  const c = catColor[cat] || catColor['Lainnya'];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">
+    <path d="M16 0C7.163 0 0 7.163 0 16c0 11.314 16 24 16 24S32 27.314 32 16C32 7.163 24.837 0 16 0z" fill="${c.bg}" stroke="${c.fg}" stroke-width="2"/>
+    <text x="16" y="22" text-anchor="middle" font-size="13" font-family="Arial">${c.emoji}</text>
+  </svg>`;
+  return L.divIcon({
+    html: svg,
+    className: '',
+    iconSize: [32, 40],
+    iconAnchor: [16, 40],
+    popupAnchor: [0, -42],
+  });
+}
+
+// ── MAP INIT ─────────────────────────────────────────────────
+const map = L.map('map', { zoomControl: true }).setView([-5.147, 119.432], 12);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors',
+  maxZoom: 19,
+}).addTo(map);
+
+// Temp crosshair marker for selecting location
+const crosshairIcon = L.divIcon({
+  html: `<div style="width:22px;height:22px;border:3px solid #2E6B4F;border-radius:50%;background:rgba(76,175,125,.35);"></div>`,
+  className: '',
+  iconSize: [22, 22],
+  iconAnchor: [11, 11],
+});
+
+map.on('click', function(e) {
+  selectedLatLng = e.latlng;
+  document.getElementById('koordinat-display').textContent =
+    `📍 Lat: ${e.latlng.lat.toFixed(5)}, Lng: ${e.latlng.lng.toFixed(5)}`;
+  if (tempMarker) map.removeLayer(tempMarker);
+  tempMarker = L.marker(e.latlng, { icon: crosshairIcon }).addTo(map);
+
+  // Switch to form tab if on list tab
+  if (document.getElementById('panel-lapor').classList.contains('active') === false) {
+    switchTab('lapor');
+  }
+});
+
+// ── RENDER EXISTING REPORTS ──────────────────────────────────
+function renderAll() {
+  // Remove old markers
+  Object.values(markers).forEach(m => map.removeLayer(m));
+  markers = {};
+  reports.forEach(addMarker);
+  renderList();
+}
+
+function addMarker(r) {
+  const m = L.marker([r.lat, r.lng], { icon: makePinIcon(r.kategori) }).addTo(map);
+  m.bindPopup(popupContent(r));
+  markers[r.id] = m;
+}
+
+function popupContent(r) {
+  const c = catColor[r.kategori] || catColor['Lainnya'];
+  return `
+    <div style="min-width:190px">
+      <div class="popup-title">${r.judul}</div>
+      <span class="popup-cat" style="background:${c.bg};color:${c.fg}">${r.kategori}</span>
+      <div class="popup-desc">${r.deskripsi || '—'}</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:5px;">
+        <span class="status-badge status-\${r.status||'Baru'}"><span class="status-dot"></span>\${r.status||'Baru'}</span>
+        <span class="popup-date">\${r.tanggal}</span>
+      </div>
+      <select onchange="changeStatus('\${r.id}',this.value)"
+        style="margin-top:8px;width:100%;padding:6px 8px;border:1.5px solid #C8DDD3;border-radius:7px;font-size:.78rem;font-family:'Space Grotesk',sans-serif;font-weight:600;cursor:pointer;background:#f8faf9;">
+        <option value="Baru" \${(r.status||'Baru')==='Baru'?'selected':''}>🔵 Baru</option>
+        <option value="Diproses" \${r.status==='Diproses'?'selected':''}>🟠 Sedang Diproses</option>
+        <option value="Selesai" \${r.status==='Selesai'?'selected':''}>🟢 Selesai</option>
+      </select>
+      <button
+        onclick="deleteReport('${r.id}')"
+        style="margin-top:10px;width:100%;padding:7px 0;background:#FDECEA;color:#C0392B;border:none;border-radius:7px;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:.78rem;cursor:pointer;letter-spacing:.2px;"
+        onmouseover="this.style.background='#f9c9c5'"
+        onmouseout="this.style.background='#FDECEA'">
+        🗑 Hapus Laporan
+      </button>
+    </div>`;
+}
+
+// ── DELETE ────────────────────────────────────────────────────
+function deleteReport(id) {
+  if (!confirm('Hapus laporan ini dari peta?')) return;
+  const m = markers[id];
+  if (m) { m.closePopup(); map.removeLayer(m); delete markers[id]; }
+  reports = reports.filter(r => r.id !== id);
+  localStorage.setItem('ecowatch_reports', JSON.stringify(reports));
+  renderList();
+  showToast('🗑 Laporan berhasil dihapus.');
+}
+
+// ── RENDER LIST ───────────────────────────────────────────────
+function renderList() {
+  const container = document.getElementById('report-list');
+  const filtered = activeFilter === 'all'
+    ? reports
+    : reports.filter(r => r.kategori === activeFilter);
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div class="empty-state"><div class="icon">🌱</div>Belum ada laporan${activeFilter !== 'all' ? ' dalam kategori ini' : ''}.</div>`;
+    return;
+  }
+
+  container.innerHTML = filtered.map(r => `
+    <div class="report-card" onclick="focusReport('${r.id}')">
+      <div class="report-card-top">
+        <span class="report-title">${r.judul}</span>
+        <span class="badge ${r.kategori}">${r.kategori}</span>
+      </div>
+      <div class="report-desc">${r.deskripsi || '—'}</div>
+      <div class="report-meta">
+        <span class="loc">📍 ${r.lat.toFixed(4)}, ${r.lng.toFixed(4)}</span>
+        <span style="display:flex;align-items:center;gap:6px;">
+          <span class="status-badge status-${r.status||'Baru'}"><span class="status-dot"></span>${r.status||'Baru'}</span>
+          <span>${r.tanggal}</span>
+        </span>
+      </div>
+    </div>
+  `).join('');
+
+  document.getElementById('tab-list').textContent = `📋 Laporan (${reports.length})`;
+}
+
+function focusReport(id) {
+  const r = reports.find(x => x.id === id);
+  if (!r || !markers[id]) return;
+  map.setView([r.lat, r.lng], 16, { animate: true });
+  markers[id].openPopup();
+}
+
+// ── FILTER ────────────────────────────────────────────────────
+function setFilter(cat) {
+  activeFilter = cat;
+  document.querySelectorAll('.chip').forEach(c => {
+    const match = (cat === 'all' && c.classList.contains('all')) ||
+                  (c.classList.contains(cat));
+    c.classList.toggle('inactive', !match);
+  });
+
+  // Grey out non-matching markers
+  reports.forEach(r => {
+    const m = markers[r.id];
+    if (!m) return;
+    const visible = cat === 'all' || r.kategori === cat;
+    m.setOpacity(visible ? 1 : 0.2);
+  });
+  renderList();
+}
+
+// ── SUBMIT ────────────────────────────────────────────────────
+function submitLaporan() {
+  const judul     = document.getElementById('f-judul').value.trim();
+  const kategori  = document.getElementById('f-kategori').value;
+  const deskripsi = document.getElementById('f-deskripsi').value.trim();
+  const status    = document.getElementById('f-status').value || 'Baru';
+
+  if (!selectedLatLng) { showToast('⚠️ Klik lokasi pada peta terlebih dahulu!'); return; }
+  if (!judul)          { showToast('⚠️ Judul laporan harus diisi!'); return; }
+  if (!kategori)       { showToast('⚠️ Pilih kategori masalah!'); return; }
+
+  const now   = new Date();
+  const tanggal = now.toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' });
+
+  const report = {
+    id:        'r' + Date.now(),
+    judul, kategori, deskripsi, status,
+    lat:       selectedLatLng.lat,
+    lng:       selectedLatLng.lng,
+    tanggal,
+  };
+
+  reports.unshift(report);
+  localStorage.setItem('ecowatch_reports', JSON.stringify(reports));
+  addMarker(report);
+  renderList();
+
+  // Reset form
+  document.getElementById('f-judul').value = '';
+  document.getElementById('f-kategori').value = '';
+  document.getElementById('f-deskripsi').value = '';
+  document.getElementById('f-status').value = 'Baru';
+  document.getElementById('koordinat-display').textContent = 'Belum ada titik yang dipilih';
+  if (tempMarker) { map.removeLayer(tempMarker); tempMarker = null; }
+  selectedLatLng = null;
+
+  showToast('✅ Laporan berhasil dikirim ke peta!');
+  switchTab('list');
+  focusReport(report.id);
+}
+
+// ── SEARCH LOCATION (real-time autocomplete) ─────────────────
+let searchTimeout = null;
+let searchIndex   = -1;
+let searchItems   = [];
+
+function onSearchInput(val) {
+  const clear = document.getElementById('search-clear');
+  clear.classList.toggle('show', val.length > 0);
+  if (val.length < 3) { closeDropdown(); return; }
+  showSpinner();
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => doSearch(val), 350);
+}
+
+function onSearchKeydown(e) {
+  const dd = document.getElementById('search-dropdown');
+  const items = dd.querySelectorAll('.search-result-item[data-idx]');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    searchIndex = Math.min(searchIndex + 1, items.length - 1);
+    highlightItem(items);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    searchIndex = Math.max(searchIndex - 1, 0);
+    highlightItem(items);
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (searchIndex >= 0 && searchItems[searchIndex]) {
+      const it = searchItems[searchIndex];
+      selectLocation(it.lat, it.lon, it.name);
+    } else if (document.getElementById('search-input').value.trim().length >= 3) {
+      doSearch(document.getElementById('search-input').value.trim());
+    }
+  } else if (e.key === 'Escape') {
+    closeDropdown();
+  }
+}
+
+function highlightItem(items) {
+  items.forEach((el, i) => el.classList.toggle('highlighted', i === searchIndex));
+  if (items[searchIndex]) items[searchIndex].scrollIntoView({ block: 'nearest' });
+}
+
+function showSpinner() {
+  const dd = document.getElementById('search-dropdown');
+  dd.innerHTML = `<div class="search-spinner"><div class="spinner-dot"></div>Mencari lokasi…</div>`;
+  dd.classList.add('open');
+}
+
+function closeDropdown() {
+  const dd = document.getElementById('search-dropdown');
+  dd.classList.remove('open');
+  dd.innerHTML = '';
+  searchIndex = -1;
+  searchItems = [];
+}
+
+function clearSearch() {
+  document.getElementById('search-input').value = '';
+  document.getElementById('search-clear').classList.remove('show');
+  closeDropdown();
+}
+
+async function doSearch(q) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=6&addressdetails=1`;
+    const res  = await fetch(url, { headers: { 'Accept-Language': 'id' } });
+    const data = await res.json();
+    const dd   = document.getElementById('search-dropdown');
+
+    if (!data.length) {
+      dd.innerHTML = `<div class="search-no-result">📭 Lokasi tidak ditemukan</div>`;
+      dd.classList.add('open');
+      searchItems = [];
+      return;
+    }
+
+    searchItems = data.map(item => ({
+      lat:  item.lat,
+      lon:  item.lon,
+      name: item.address?.road || item.address?.suburb || item.address?.village || item.display_name.split(',')[0],
+      sub:  item.display_name.split(',').slice(1, 3).join(', ').trim(),
+      type: item.type,
+    }));
+
+    const icons = { road:'🛣️', suburb:'🏘️', city:'🏙️', town:'🏘️', village:'🌿',
+                    park:'🌳', water:'💧', administrative:'📍', default:'📍' };
+
+    dd.innerHTML = searchItems.map((it, i) => `
+      <div class="search-result-item" data-idx="${i}"
+           onclick="selectLocation('${it.lat}','${it.lon}','${it.name.replace(/'/g,"\'")}')">
+        <span class="search-result-icon">${icons[it.type] || icons.default}</span>
+        <div class="search-result-text">
+          <span class="place-name">${it.name}</span>
+          <span class="place-sub">${it.sub}</span>
+        </div>
+      </div>`).join('');
+    dd.classList.add('open');
+    searchIndex = -1;
+  } catch(err) {
+    const dd = document.getElementById('search-dropdown');
+    dd.innerHTML = `<div class="search-no-result">⚠️ Gagal mencari, cek koneksi internet</div>`;
+  }
+}
+
+function selectLocation(lat, lng, name) {
+  const latlng = L.latLng(parseFloat(lat), parseFloat(lng));
+  selectedLatLng = latlng;
+  map.flyTo(latlng, 17, { animate: true, duration: 1.2 });
+  if (tempMarker) map.removeLayer(tempMarker);
+  const icon = L.divIcon({
+    html: `<div style="width:22px;height:22px;border:3px solid #2E6B4F;border-radius:50%;background:rgba(76,175,125,.35);"></div>`,
+    className: '', iconSize: [22,22], iconAnchor: [11,11],
+  });
+  tempMarker = L.marker(latlng, { icon }).addTo(map);
+  document.getElementById('koordinat-display').textContent =
+    `📍 Lat: ${parseFloat(lat).toFixed(5)}, Lng: ${parseFloat(lng).toFixed(5)}`;
+  document.getElementById('search-input').value = name;
+  document.getElementById('search-clear').classList.add('show');
+  closeDropdown();
+  showToast('📍 ' + name);
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  if (!document.getElementById('search-wrap')?.contains(e.target)) closeDropdown();
+});
+
+
+// ── GPS ───────────────────────────────────────────────────────
+function getGPS() {
+  const btn = document.getElementById('gps-btn');
+  if (!navigator.geolocation) { showToast('⚠️ Browser tidak support GPS'); return; }
+  btn.disabled = true;
+  btn.textContent = '⏳ Mendeteksi lokasi…';
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+      selectedLatLng = latlng;
+      map.flyTo(latlng, 17, { animate: true, duration: 1.2 });
+      if (tempMarker) map.removeLayer(tempMarker);
+      const icon = L.divIcon({
+        html: `<div style="width:22px;height:22px;border:3px solid #2E6B4F;border-radius:50%;background:rgba(76,175,125,.35);"></div>`,
+        className:'', iconSize:[22,22], iconAnchor:[11,11],
+      });
+      tempMarker = L.marker(latlng, { icon }).addTo(map);
+      document.getElementById('koordinat-display').textContent =
+        `📍 Lat: ${pos.coords.latitude.toFixed(5)}, Lng: ${pos.coords.longitude.toFixed(5)}`;
+      btn.disabled = false;
+      btn.innerHTML = '📍 Gunakan Lokasi Saya (GPS)';
+      showToast('✅ Lokasi GPS berhasil dideteksi!');
+    },
+    (err) => {
+      btn.disabled = false;
+      btn.innerHTML = '📍 Gunakan Lokasi Saya (GPS)';
+      showToast('⚠️ Gagal mendapatkan lokasi GPS');
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+// ── DARK MODE ─────────────────────────────────────────────────
+function toggleDark() {
+  document.body.classList.toggle('dark');
+  const isDark = document.body.classList.contains('dark');
+  document.getElementById('dark-btn').textContent = isDark ? '☀️' : '🌙';
+  localStorage.setItem('ecowatch_dark', isDark ? '1' : '0');
+}
+if (localStorage.getItem('ecowatch_dark') === '1') {
+  document.body.classList.add('dark');
+  document.getElementById('dark-btn').textContent = '☀️';
+}
+
+// ── CHANGE STATUS ─────────────────────────────────────────────
+function changeStatus(id, status) {
+  const r = reports.find(x => x.id === id);
+  if (!r) return;
+  r.status = status;
+  localStorage.setItem('ecowatch_reports', JSON.stringify(reports));
+  // Refresh popup
+  if (markers[id]) markers[id].setPopupContent(popupContent(r));
+  renderList();
+  showToast('✅ Status diperbarui: ' + status);
+}
+
+// ── TABS ──────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('active', (i === 0 && name === 'lapor') || (i === 1 && name === 'list'));
+  });
+  document.getElementById('panel-lapor').classList.toggle('active', name === 'lapor');
+  document.getElementById('panel-list').classList.toggle('active', name === 'list');
+  if (name === 'list') renderList();
+}
+
+// ── TOAST ─────────────────────────────────────────────────────
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ── INIT ──────────────────────────────────────────────────────
+renderAll();
+setFilter('all');
+document.getElementById('tab-list').textContent =
+  reports.length ? `📋 Laporan (${reports.length})` : '📋 Semua Laporan';
+</script>
+</body>
+</html>
